@@ -1,0 +1,3 @@
+[submodule "streamdiffusion"]
+	path = streamdiffusion
+	url = ../StreamDiffusion
