@@ -21,7 +21,7 @@ dependencies = [
     # Shared dependencies with StreamDiffusion
     "fire",
     "omegaconf",
-    "huggingface_hub>=0.20.0",
+    "huggingface_hub>=0.20.0,<0.24.0",
     "numpy>=1.21.0",
     "pillow>=8.3.0",
 

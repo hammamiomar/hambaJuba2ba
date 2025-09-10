@@ -12,6 +12,8 @@ if ! command -v uv &> /dev/null; then
     echo "Installing uv package manager..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.cargo/bin:$PATH"
+    # Source it for current session
+    source $HOME/.local/bin/env
 fi
 
 # Install dependencies
