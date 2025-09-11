@@ -1,0 +1,36 @@
+# .github/workflows/docker-build-push.yml
+
+name: Build and Push Docker Image
+
+# This workflow runs on every push to the 'main' branch
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest # This job runs on a GitHub-hosted Linux server
+
+    permissions:
+      contents: read
+      packages: write # This permission is required to push to GHCR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive" # Important: This checks out your streamdiffusion submodule
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} # This is a special, auto-generated token
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Build from the root of the repo
+          push: true # Actually push the image
+          tags: ghcr.io/${{ github.repository_owner }}/hambajuba2ba:latest
