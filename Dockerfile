@@ -21,20 +21,23 @@ WORKDIR /workspace/hambaJuba2ba
 # Copy only the files needed for dependency installation first to leverage caching.
 COPY pyproject.toml README.md ./
 COPY streamdiffusion/ ./streamdiffusion/
-
-# Install all dependencies from your pyproject.toml AND the streamdiffusion editable install.
-RUN uv pip install -e ".[all]" -e ./streamdiffusion[dev,tensorrt]
-
-# Now copy the rest of your project's source code
 COPY src/ ./src/
 
-# Run your custom TensorRT installation script
-# This is essential for the non-pip dependencies of TensorRT
-RUN python src/hambajuba2ba/install_tensorrt.py --cuda 12
+RUN uv pip install \
+    --pre \
+    --extra-index-url https://pypi.nvidia.com \
+    --extra-index-url https://pypi.ngc.nvidia.com \
+    -e ".[all]" \
+    -e "./streamdiffusion[dev,tensorrt]" \
+    "nvidia-cudnn-cu12==8.9.4.25" \
+    "tensorrt==9.0.1.post11.dev4" \
+    "polygraphy==0.47.1" \
+    "onnx-graphsurgeon==0.3.26"
 
-# Set the LD_LIBRARY_PATH environment variable permanently in the image.
-# We hardcode the relative path within the venv.
+
+RUN echo 'export LD_LIBRARY_PATH="/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"' >> /etc/profile.d/nvidia_libs.sh
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
+
 # Expose ports
 EXPOSE 9090 7860
 

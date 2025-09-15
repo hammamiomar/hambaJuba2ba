@@ -10,11 +10,13 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     # Core ML/AI dependencies
-    "torch",
-    "torchvision",
-    "torchaudio",
-    "diffusers>=0.24.0,<0.30.0",
-    "transformers",
+    "torch==2.2.0",
+    "torchvision==0.17.0",
+    "torchaudio==2.2.0",
+    "diffusers==0.27.2",
+    "transformers==4.38.2",
+    "numpy<2.0",
+    "peft==0.10.10",
     "accelerate",
     "xformers",
 
@@ -22,7 +24,6 @@ dependencies = [
     "fire",
     "omegaconf",
     "huggingface_hub>=0.20.0,<0.24.0",
-    "numpy>=1.21.0",
     "pillow>=8.3.0",
 
     # Web framework
