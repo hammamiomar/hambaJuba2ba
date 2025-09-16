@@ -7,71 +7,51 @@ name = "hambajuba2ba"
 version = "0.1.0"
 description = "Real-time diffusion pipeline with StreamDiffusion integration"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    # Core ML/AI dependencies
-    "torch==2.2.0",
-    "torchvision==0.17.0",
-    "torchaudio==2.2.0",
-    "diffusers==0.27.2",
-    "transformers==4.38.2",
-    "numpy<2.0",
-    "peft==0.10.10",
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "diffusers",
+    "transformers",
     "accelerate",
     "xformers",
+    "peft",
 
-    # Shared dependencies with StreamDiffusion
+    "numpy<2.0",
+
+    # Other dependencies
     "fire",
     "omegaconf",
-    "huggingface_hub>=0.20.0,<0.24.0",
-    "pillow>=8.3.0",
-
-    # Web framework
-    "fastapi>=0.116.1",
-    "uvicorn>=0.35.0",
-    "websockets>=15.0.1",
+    "huggingface_hub",
+    "pillow",
+    "fastapi",
+    "uvicorn",
+    "websockets",
 
     # Development
-    "ipykernel>=6.30.1",
+    "ipykernel",
     "jupyter",
     "notebook",
 ]
 
 [project.optional-dependencies]
 cuda = [
-    # Basic CUDA dependencies that work well via pip/uv
-    "onnx==1.15.0",
-    "onnxruntime==1.16.3",
-    "protobuf==3.20.2",
-    "cuda-python",
-    "colored",
-
-    # Note: TensorRT requires special installation due to:
-    # - NVIDIA's custom PyPI index
-    # - CUDA version-specific cuDNN packages
-    # - Version conflicts with standard packages
-    # Use: make tensorrt OR uv run python -m hambajuba2ba.install_tensorrt
+    # Modern, pip-installable TensorRT from NVIDIA's index
+    "tensorrt-cu12",
+    "tensorrt-cu12-libs",
+    "tensorrt-cu12-bindings",
+    "polygraphy",
+    "onnx-graphsurgeon",
+    "onnx",
+    "onnxruntime",
 ]
 
-# StreamDiffusion is now included as submodule - no separate group needed
-
-dev = [
-    # Development and testing
-    "pytest",
-    "pytest-asyncio",
-    "black",
-    "ruff",
-    "mypy",
-]
-
-all = [
-    # Everything for full development setup
-    "hambajuba2ba[cuda,dev]"
-]
+dev = ["pytest", "black", "ruff", "mypy"]
+all = ["hambajuba2ba[cuda,dev]"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hambajuba2ba"]
 
 [project.scripts]
 hambajuba2ba = "hambajuba2ba.main:main"
-install-tensorrt = "hambajuba2ba.install_tensorrt:main"
