@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Simple pytest tests to verify RunPod setup and get TensorRT benchmark."""
-
 import torch
 import subprocess
 import sys

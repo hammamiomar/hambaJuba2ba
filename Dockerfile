@@ -1,33 +1,48 @@
 # Start from the RunPod PyTorch base image for an RTX 5090
 FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
 
-WORKDIR /workspace
+# Environment Variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    HF_HOME=/workspace/.cache/huggingface \
+    TRANSFORMERS_CACHE=/workspace/.cache/huggingface/hub \
+    HF_DATASETS_CACHE=/workspace/.cache/huggingface/datasets \
+    UV_SYSTEM_PYTHON=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-# Prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
+# Install basic tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    ca-certificates \
+    tmux \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install uv package manager
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install uv
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+
+# Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
 
-# Create a virtual environment
-RUN uv venv /opt/venv --python 3.11
-# Add the venv to the PATH so all subsequent commands use it
-ENV PATH="/opt/venv/bin:${PATH}"
+# Set up tmux configuration for better defaults
+RUN echo 'set -g mouse on\n\
+set -g history-limit 50000\n\
+set -g default-terminal "screen-256color"\n\
+set -g status-bg colour235\n\
+set -g status-fg white\n\
+set-window-option -g window-status-current-bg colour240\n\
+bind r source-file ~/.tmux.conf \; display "Config reloaded!"' > /root/.tmux.conf
 
-WORKDIR /workspace/hambaJuba2ba
+# Create workspace directory with proper permissions
+WORKDIR /workspace
+RUN mkdir -p /workspace/.cache/huggingface/hub && \
+    mkdir -p /workspace/.cache/huggingface/datasets && \
+    chmod -R 777 /workspace/.cache
 
-COPY pyproject.toml README.md ./
-COPY src/ ./src/
+# Expose ports
+EXPOSE 9090 7860 22 8080
 
-RUN uv pip install \
-    --extra-index-url https://pypi.nvidia.com \
-    -e ".[all]"
-
-RUN echo 'export LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/tensorrt_libs:${LD_LIBRARY_PATH}"' >> /etc/profile.d/tensorrt_libs.sh
-ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/tensorrt_libs:${LD_LIBRARY_PATH}"
-
-# Expose ports and keep the container alive.
-EXPOSE 9090 7860
-CMD ["sleep", "infinity"]
+# Use the official Runpod SSH setup command as recommended in docs
+CMD bash -c 'apt update;DEBIAN_FRONTEND=noninteractive apt-get install openssh-server -y;mkdir -p ~/.ssh;cd $_;chmod 700 ~/.ssh;echo "$PUBLIC_KEY" >> authorized_keys;chmod 700 authorized_keys;service ssh start;sleep infinity'

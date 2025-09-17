@@ -1,38 +1,42 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build >= 0.8.17, <0.9.0"]
+build-backend = "uv_build"
 
 [project]
 name = "hambajuba2ba"
 version = "0.1.0"
 description = "Real-time diffusion pipeline with StreamDiffusion integration"
 readme = "README.md"
-requires-python = ">=3.11"
 dependencies = [
-    "torch",
+    #Torch
+    "torch>=2.8",
     "torchvision",
     "torchaudio",
-    "diffusers",
+
+    #ML Libs
+    "diffusers==0.35.0",
     "transformers",
     "accelerate",
-    "xformers",
-    "peft",
+    "peft==0.17.0",
 
-    "numpy<2.0",
+    #Core Utils
+    "numpy",
+    "pillow",
+    "huggingface_hub",
+    "safetensors",
 
-    # Other dependencies
+    # Config
     "fire",
     "omegaconf",
-    "huggingface_hub",
-    "pillow",
+
+    #Web
     "fastapi",
     "uvicorn",
     "websockets",
 
-    # Development
-    "ipykernel",
-    "jupyter",
-    "notebook",
+    #stream diffusion
+    "streamdiffusion"
+
 ]
 
 [project.optional-dependencies]
@@ -42,16 +46,54 @@ cuda = [
     "tensorrt-cu12-libs",
     "tensorrt-cu12-bindings",
     "polygraphy",
+    "xformers",
+    "cuda-python==12.8",
     "onnx-graphsurgeon",
     "onnx",
     "onnxruntime",
 ]
 
-dev = ["pytest", "black", "ruff", "mypy"]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+    "mypy",
+    "ipykernel",
+    "jupyter",
+    "notebook",
+    "pytest",
+    "colored",
+
+]
 all = ["hambajuba2ba[cuda,dev]"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/hambajuba2ba"]
+[tool.uv]
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true # Critical: only use this for packages explicitly mapped below.
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+
+# Map specific packages to their designated indexes.
+[tool.uv.sources]
+# PyTorch-related packages
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
+xformers = [{ index = "pytorch-cu128" }]
+
+streamdiffusion = {path = "packages/streamdiffusion", editable = true}
+
+# NVIDIA packages (from your 'cuda' optional-dependencies)
+"tensorrt-cu12" = [{ index = "nvidia" }]
+"tensorrt-cu12-libs" = [{ index = "nvidia" }]
+"tensorrt-cu12-bindings" = [{ index = "nvidia" }]
+"polygraphy" = [{ index = "nvidia" }]
+"onnx-graphsurgeon" = [{ index = "nvidia" }]
+
 
 [project.scripts]
 hambajuba2ba = "hambajuba2ba.main:main"

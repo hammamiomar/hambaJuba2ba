@@ -28,13 +28,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }} # This is a special, auto-generated token
 
-      - name: Free up disk space
-        run: |
-          sudo docker system prune -af
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
