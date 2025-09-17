@@ -10,14 +10,20 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-# Install basic tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     ca-certificates \
     tmux \
     vim \
+    openssh-server \
     && rm -rf /var/lib/apt/lists/*
+
+#SSH Config
+RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
+    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config && \
+    echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config && \
+    echo "Port 22" >> /etc/ssh/sshd_config
 
 # Install uv
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
@@ -41,8 +47,20 @@ RUN mkdir -p /workspace/.cache/huggingface/hub && \
     mkdir -p /workspace/.cache/huggingface/datasets && \
     chmod -R 777 /workspace/.cache
 
-# Expose ports
 EXPOSE 9090 7860 22 8080
 
-# Use the official Runpod SSH setup command as recommended in docs
-CMD bash -c 'apt update;DEBIAN_FRONTEND=noninteractive apt-get install openssh-server -y;mkdir -p ~/.ssh;cd $_;chmod 700 ~/.ssh;echo "$PUBLIC_KEY" >> authorized_keys;chmod 700 authorized_keys;service ssh start;sleep infinity'
+RUN echo '#!/bin/bash' > /start.sh && \
+    echo 'mkdir -p ~/.ssh' >> /start.sh && \
+    echo 'chmod 700 ~/.ssh' >> /start.sh && \
+    echo 'if [ -n "$PUBLIC_KEY" ]; then' >> /start.sh && \
+    echo '    echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys' >> /start.sh && \
+    echo '    chmod 600 ~/.ssh/authorized_keys' >> /start.sh && \
+    echo 'fi' >> /start.sh && \
+    echo 'mkdir -p /run/sshd' >> /start.sh && \
+    echo 'service ssh start' >> /start.sh && \
+    echo 'exec "$@"' >> /start.sh && \
+    chmod +x /start.sh
+
+ENTRYPOINT ["/start.sh"]
+
+CMD ["sleep", "infinity"]
