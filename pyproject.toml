@@ -5,7 +5,7 @@ description = "Real-time diffusion pipeline with StreamDiffusion integration"
 readme = "README.md"
 dependencies = [
     #Torch
-    "torch>=2.8",
+    "torch>=2.7",
     "torchvision",
     "torchaudio",
 
@@ -18,6 +18,7 @@ dependencies = [
     #Core Utils
     "numpy",
     "pillow",
+    "opencv-python",
     "huggingface_hub",
     "safetensors",
 
@@ -26,13 +27,15 @@ dependencies = [
     "omegaconf",
 
     #Web
-    "fastapi",
-    "uvicorn",
+    "fastapi[standard]",
+    "uvicorn[standard]",
     "websockets",
-
+    "pydantic-settings",
     #stream diffusion
-    "streamdiffusion"
-
+    "streamdiffusion",
+    "ipykernel>=6.30.1",
+    "jupyter>=1.1.1",
+    "librosa>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -67,7 +70,6 @@ all = ["hambajuba2ba[cuda,dev]"]
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
-explicit = true # Critical: only use this for packages explicitly mapped below.
 
 [[tool.uv.index]]
 name = "nvidia"
