@@ -5,6 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/workspace/.cache/huggingface \
     TRANSFORMERS_CACHE=/workspace/.cache/huggingface/hub \
     HF_DATASETS_CACHE=/workspace/.cache/huggingface/datasets \
+    UV_CACHE_DIR=/workspace/.cache/uv \
     UV_SYSTEM_PYTHON=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
