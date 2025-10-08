@@ -1,7 +1,3 @@
-[build-system]
-requires = ["uv_build >= 0.8.17, <0.9.0"]
-build-backend = "uv_build"
-
 [project]
 name = "hambajuba2ba"
 version = "0.1.0"
@@ -93,7 +89,3 @@ streamdiffusion = {path = "packages/streamdiffusion", editable = true}
 "tensorrt-cu12-bindings" = [{ index = "nvidia" }]
 "polygraphy" = [{ index = "nvidia" }]
 "onnx-graphsurgeon" = [{ index = "nvidia" }]
-
-
-[project.scripts]
-hambajuba2ba = "hambajuba2ba.main:main"

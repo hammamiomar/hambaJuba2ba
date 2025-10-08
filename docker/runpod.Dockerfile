@@ -1,3 +1,4 @@
+# Start from the RunPod PyTorch base image for an RTX 5090
 FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
 
 # Environment Variables
@@ -16,13 +17,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     vim \
     openssh-server \
-    && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs \
-    && \
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# SSH Config
+#SSH Config
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
     echo "PasswordAuthentication no" >> /etc/ssh/sshd_config && \
     echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config && \
@@ -35,24 +32,23 @@ RUN sh /uv-installer.sh && rm /uv-installer.sh
 # Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
 
-# Set up tmux configuration
+# Set up tmux configuration for better defaults
 RUN echo 'set -g mouse on\n\
-    set -g history-limit 50000\n\
-    set -g default-terminal "screen-256color"\n\
-    set -g status-bg colour235\n\
-    set -g status-fg white\n\
-    set-window-option -g window-status-current-bg colour240\n\
-    bind r source-file ~/.tmux.conf \; display "Config reloaded!"' > /root/.tmux.conf
+set -g history-limit 50000\n\
+set -g default-terminal "screen-256color"\n\
+set -g status-bg colour235\n\
+set -g status-fg white\n\
+set-window-option -g window-status-current-bg colour240\n\
+bind r source-file ~/.tmux.conf \; display "Config reloaded!"' > /root/.tmux.conf
 
-# Create workspace directory
+# Create workspace directory with proper permissions
 WORKDIR /workspace
 RUN mkdir -p /workspace/.cache/huggingface/hub && \
     mkdir -p /workspace/.cache/huggingface/datasets && \
     chmod -R 777 /workspace/.cache
 
-EXPOSE 9090 7860 22 8080 3000
+EXPOSE 9090 7860 22 8080
 
-# Start script
 RUN echo '#!/bin/bash' > /start.sh && \
     echo 'mkdir -p ~/.ssh' >> /start.sh && \
     echo 'chmod 700 ~/.ssh' >> /start.sh && \
