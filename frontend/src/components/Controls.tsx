@@ -11,8 +11,10 @@ interface ControlsProps {
   onStart: () => void;
   onStop: () => void;
   isGenerating: boolean;
-  prompt: string;
-  onPromptChange: (prompt: string) => void;
+  sourcePrompt: string;
+  onSourcePromptChange: (prompt: string) => void;
+  targetPrompt: string;
+  onTargetPromptChange: (prompt: string) => void;
   reconnectAttempts?: number;
 }
 
@@ -24,8 +26,10 @@ export function Controls({
   onStart,
   onStop,
   isGenerating,
-  prompt,
-  onPromptChange,
+  sourcePrompt,
+  onSourcePromptChange,
+  targetPrompt,
+  onTargetPromptChange,
   reconnectAttempts = 0,
 }: ControlsProps) {
   const isConnected = status === ConnectionStatus.CONNECTED;
@@ -161,14 +165,28 @@ export function Controls({
 
           <div>
             <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-white/50">
-              Prompt
+              Source Prompt
             </label>
             <input
               type="text"
-              value={prompt}
-              onChange={(e) => onPromptChange(e.target.value)}
+              value={sourcePrompt}
+              onChange={(e) => onSourcePromptChange(e.target.value)}
               disabled={isGenerating}
-              placeholder="abstract colorful flowing shapes..."
+              placeholder="moldy burger in sewer..."
+              className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-white/50">
+              Target Prompt
+            </label>
+            <input
+              type="text"
+              value={targetPrompt}
+              onChange={(e) => onTargetPromptChange(e.target.value)}
+              disabled={isGenerating}
+              placeholder="steamy burger..."
               className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
             />
           </div>

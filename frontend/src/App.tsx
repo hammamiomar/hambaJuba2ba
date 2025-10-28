@@ -10,9 +10,10 @@ import type { Metrics } from "./types";
 function App() {
   const canvasRef = useRef<CanvasHandle>(null);
 
-  const [prompt, setPrompt] = useState(
+  const [sourcePrompt, setSourcePrompt] = useState(
     "Moldy Burger in a sopping wet sewer, grimy, high quality",
   );
+  const [targetPrompt, setTargetPrompt] = useState("steamy burger");
 
   const handleFrame = useCallback(async (data: ArrayBuffer) => {
     await canvasRef.current?.renderFrame(data);
@@ -35,8 +36,8 @@ function App() {
   });
 
   const handleStart = useCallback(() => {
-    sendStart(prompt);
-  }, [sendStart, prompt]);
+    sendStart(sourcePrompt, targetPrompt);
+  }, [sendStart, sourcePrompt, targetPrompt]);
 
   const metrics: Metrics = {
     fps,
@@ -57,8 +58,10 @@ function App() {
           onStart={handleStart}
           onStop={sendStop}
           isGenerating={isGenerating}
-          prompt={prompt}
-          onPromptChange={setPrompt}
+          sourcePrompt={sourcePrompt}
+          onSourcePromptChange={setSourcePrompt}
+          targetPrompt={targetPrompt}
+          onTargetPromptChange={setTargetPrompt}
           reconnectAttempts={reconnectAttempts}
         />
       </div>

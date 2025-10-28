@@ -31,7 +31,7 @@ interface UseWebSocketReturn {
   disconnect: () => void;
 
   /** Send start message to begin generation */
-  sendStart: (prompt?: string) => void;
+  sendStart: (sourcePrompt?: string, targetPrompt?: string) => void;
 
   /** Send stop message to stop generation */
   sendStop: () => void;
@@ -196,13 +196,22 @@ export function useWebSocket({
   /**
    * Send start message to begin generation
    */
-  const sendStart = useCallback((prompt?: string) => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      console.log("[useWebSocket] Sending start message");
-      ws.current.send(JSON.stringify({ action: "start", prompt }));
-      setIsGenerating(true);
-    }
-  }, []);
+  const sendStart = useCallback(
+    (sourcePrompt?: string, targetPrompt?: string) => {
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        console.log("[useWebSocket] Sending start message");
+        ws.current.send(
+          JSON.stringify({
+            action: "start",
+            source_prompt: sourcePrompt,
+            target_prompt: targetPrompt,
+          }),
+        );
+        setIsGenerating(true);
+      }
+    },
+    [],
+  );
 
   /**
    * Send stop message to stop generation

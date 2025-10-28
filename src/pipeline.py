@@ -69,7 +69,10 @@ class HyperSD15Pipeline:
     def _optimize(self):
         """Apply performance optimizations."""
 
-        # 1. Tiny VAE (3-5x faster decoding)
+        # Disable progress bars
+        self.pipe.set_progress_bar_config(disable=True)
+
+        # Tiny VAE (3-5x faster decoding)
         if self.config.use_tiny_vae:
             logger.info("Replacing with Tiny VAE")
             self.pipe.vae = AutoencoderTiny.from_pretrained(
@@ -78,6 +81,28 @@ class HyperSD15Pipeline:
             ).to(self.device)
 
         logger.info("Optimizations applied")
+
+    def encode_prompt(self, prompt: str) -> torch.Tensor:
+        """Encode text prompt to embedding.
+
+        Args:
+            prompt: Text prompt
+
+        Returns:
+            Prompt embedding tensor (1, seq_len, dim)
+        """
+        text_inputs = self.pipe.tokenizer(
+            prompt,
+            padding="max_length",
+            max_length=self.pipe.tokenizer.model_max_length,
+            truncation=True,
+            return_tensors="pt",
+        )
+        with torch.no_grad():
+            embeddings = self.pipe.text_encoder(
+                text_inputs.input_ids.to(self.device)
+            )[0]
+        return embeddings
 
     def generate(
         self,
@@ -105,41 +130,47 @@ class HyperSD15Pipeline:
                 guidance_scale=self.config.guidance_scale,
                 height=self.config.height,
                 width=self.config.width,
-                output_type="pt",  # Return PyTorch tensor
-                verbose=False,
+                output_type="pt",
             )
 
-        # Return first image (C, H, W)
         return output.images[0]
 
     def generate_batch(
         self,
         latents: torch.Tensor,
         prompt: str = "Hamburger in a sewer, sopping wet, surrounded by teeth",
+        prompt_embeds: torch.Tensor = None,
     ) -> list[torch.Tensor]:
         """Generate multiple frames in one GPU call.
 
         Args:
             latents: Batch of latent tensors (batch_size, 4, H//8, W//8)
-            prompt: Text prompt for generation
+            prompt: Text prompt for generation (ignored if prompt_embeds provided)
+            prompt_embeds: Pre-computed prompt embeddings (batch_size, seq_len, dim)
 
         Returns:
             List of generated image tensors, each (C, H, W) in range [0, 1]
         """
         latents = latents.to(self.device)
         batch_size = latents.shape[0]
-        prompts = [prompt] * batch_size
+
+        # Use embeddings if provided, otherwise encode prompt
+        if prompt_embeds is not None:
+            prompt_embeds = prompt_embeds.to(self.device)
+            kwargs = {"prompt_embeds": prompt_embeds}
+        else:
+            prompts = [prompt] * batch_size
+            kwargs = {"prompt": prompts}
 
         with torch.no_grad():
             output = self.pipe(
-                prompt=prompts,
                 latents=latents,
                 num_inference_steps=self.config.num_inference_steps,
                 guidance_scale=self.config.guidance_scale,
                 height=self.config.height,
                 width=self.config.width,
                 output_type="pt",
-                verbose=False,
+                **kwargs,
             )
 
         return [output.images[i] for i in range(len(output.images))]

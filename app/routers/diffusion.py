@@ -18,6 +18,7 @@ from collections import deque
 from src.config import PipelineConfig
 from src.pipeline import HyperSD15Pipeline
 from src.latent import LatentWalk
+from src.walk import FourCornerWalk
 
 logger = logging.getLogger("uvicorn")
 router = APIRouter()
@@ -80,10 +81,59 @@ def tensor_to_jpeg(tensor: torch.Tensor, quality: int = 85) -> bytes:
     return buf.tobytes()
 
 
+def generate_batch_sync(
+    pipeline, noise_walk, prompt_walk, config, batch_size
+) -> tuple[list[bytes], dict]:
+    """GPU-bound batch generation (runs in executor)."""
+    t0 = time.perf_counter()
+
+    # Step walks and collect batch
+    latents_list = []
+    embeds_list = []
+    for i in range(batch_size):
+        noise_walk.step()
+        prompt_walk.step()
+        latents_list.append(
+            noise_walk.get(config.device, config.get_torch_dtype())
+        )
+        embeds_list.append(
+            prompt_walk.get(config.device, config.get_torch_dtype())
+        )
+
+    latents_batch = torch.cat(latents_list, dim=0)
+    embeds_batch = torch.cat(embeds_list, dim=0)
+    walk_time = time.perf_counter() - t0
+
+    # Inference
+    t1 = time.perf_counter()
+    frames = pipeline.generate_batch(latents_batch, prompt_embeds=embeds_batch)
+    inference_time = time.perf_counter() - t1
+
+    # Encode to JPEG
+    t2 = time.perf_counter()
+    frame_bytes_list = [
+        tensor_to_jpeg(frame, quality=config.jpeg_quality) for frame in frames
+    ]
+    jpeg_time = time.perf_counter() - t2
+
+    metrics = {
+        "walk_time": walk_time,
+        "inference_time": inference_time,
+        "jpeg_time": jpeg_time,
+        "batch_time": time.perf_counter() - t0,
+    }
+
+    return frame_bytes_list, metrics
+
+
 @router.websocket("/ws/generate/")
 async def stream_latent_walk(websocket: WebSocket):
     await websocket.accept()
     logger.info("Client connected")
+
+    producer_task = None
+    consumer_task = None
+    stop_event = asyncio.Event()
 
     try:
         pipeline, latent_walk, config = await get_or_create_pipeline()
@@ -93,99 +143,115 @@ async def stream_latent_walk(websocket: WebSocket):
             action = msg.get("action")
 
             if action == "start":
-                prompt = msg.get(
-                    "prompt", "Burger covered in sopping wet oil in a gutter"
+                source_prompt = msg.get(
+                    "source_prompt", "Burger covered in sopping wet oil in a gutter"
                 )
-                logger.info(f"Starting generation with prompt: {prompt}")
+                target_prompt = msg.get("target_prompt", "steamy burger")
+                logger.info(f"Starting: {source_prompt} → {target_prompt}")
 
-                angle = 0.0
-                frame_count = 0
-                generating = True
+                # Setup walks
+                embed_src = pipeline.encode_prompt(source_prompt)
+                embed_tgt = pipeline.encode_prompt(target_prompt)
+                prompt_walk = FourCornerWalk.from_prompt_embeddings(
+                    embed_src, embed_tgt, seed=config.seed
+                )
 
-                latent_times = deque(maxlen=30)
-                inference_times = deque(maxlen=30)
-                jpeg_times = deque(maxlen=30)
-                send_times = deque(maxlen=30)
-                loop_times = deque(maxlen=30)
+                latent_shape = (1, 4, config.latent_height, config.latent_width)
+                noise_walk = FourCornerWalk.from_latent_noise(
+                    latent_shape, seed=config.seed + 1
+                )
 
-                while generating:
-                    batch_start = time.perf_counter()
+                frame_queue = asyncio.Queue(maxsize=16)
+                stop_event.clear()
 
-                    angles = [
-                        (angle + i * config.walk_speed) % (2 * math.pi)
-                        for i in range(config.batch_size)
-                    ]
-                    # Latent Noise Creation
-                    t0 = time.perf_counter()
-                    latents_list = [
-                        latent_walk.get_latent(
-                            ang, device=config.device, dtype=config.get_torch_dtype()
+                # Producer: generates batches
+                async def producer():
+                    loop = asyncio.get_event_loop()
+                    batch_times = deque(maxlen=10)
+
+                    while not stop_event.is_set():
+                        t_start = time.perf_counter()
+                        frame_bytes_list, metrics = await loop.run_in_executor(
+                            None,
+                            generate_batch_sync,
+                            pipeline,
+                            noise_walk,
+                            prompt_walk,
+                            config,
+                            config.batch_size,
                         )
-                        for ang in angles
-                    ]
-                    latents_batch = torch.cat(latents_list, dim=0)
-                    latent_time = time.perf_counter() - t0
 
-                    # Frame Generation
-                    t1 = time.perf_counter()
-                    frames = pipeline.generate_batch(latents_batch, prompt=prompt)
-                    batch_inference_time = time.perf_counter() - t1
+                        for frame_bytes in frame_bytes_list:
+                            await frame_queue.put(frame_bytes)
 
-                    for frame in frames:
-                        # Torch Frame to Jpeg
-                        t2 = time.perf_counter()
-                        frame_bytes = tensor_to_jpeg(frame, quality=config.jpeg_quality)
-                        jpeg_time = time.perf_counter() - t2
+                        batch_times.append(time.perf_counter() - t_start)
 
-                        # Jpeg to Socket
-                        t3 = time.perf_counter()
+                        if len(batch_times) == 10:
+                            avg_batch_time = sum(batch_times) / 10
+                            gen_fps = config.batch_size / avg_batch_time
+                            logger.info(f"Producer: {gen_fps:.1f} FPS (generation)")
+
+                # Consumer: sends at fixed rate
+                async def consumer():
+                    frame_count = 0
+                    send_times = deque(maxlen=30)
+                    last_log = time.perf_counter()
+                    target_fps = 10.0  # Adjust as needed
+                    frame_interval = 1.0 / target_fps
+
+                    while not stop_event.is_set():
+                        try:
+                            frame_bytes = await asyncio.wait_for(
+                                frame_queue.get(), timeout=0.5
+                            )
+                        except asyncio.TimeoutError:
+                            continue
+
+                        t_send_start = time.perf_counter()
                         await websocket.send_bytes(frame_bytes)
-                        send_time = time.perf_counter() - t3
-
-                        latent_times.append(latent_time / config.batch_size)
-                        inference_times.append(batch_inference_time / config.batch_size)
-                        jpeg_times.append(jpeg_time)
-                        send_times.append(send_time)
-                        loop_times.append(time.perf_counter() - batch_start)
+                        send_times.append(time.perf_counter() - t_send_start)
                         frame_count += 1
 
-                    angle = angles[-1] + config.walk_speed
+                        # Smooth pacing
+                        elapsed = time.perf_counter() - t_send_start
+                        sleep_time = max(0, frame_interval - elapsed)
+                        await asyncio.sleep(sleep_time)
 
-                    if frame_count % 30 == 0 and len(loop_times) == 30:
-                        gen_time = (
-                            sum(latent_times) + sum(inference_times) + sum(jpeg_times)
-                        )
-                        gen_fps = 30.0 / gen_time
-                        delivery_fps = 30.0 / sum(loop_times)
+                        # Log delivery metrics
+                        if time.perf_counter() - last_log >= 3.0:
+                            delivery_fps = frame_count / (
+                                time.perf_counter() - last_log
+                            )
+                            avg_send = sum(send_times) / len(send_times) * 1000
+                            queue_depth = frame_queue.qsize()
+                            logger.info(
+                                f"Frame {frame_count} | Delivery: {delivery_fps:.1f} FPS "
+                                f"| Send: {avg_send:.1f}ms | Queue: {queue_depth}"
+                            )
+                            frame_count = 0
+                            last_log = time.perf_counter()
 
-                        logger.info(
-                            f"\nFrame {frame_count} | STREAMBATCH (batch={config.batch_size})"
-                            f"\nGeneration: {gen_fps:.1f} FPS"
-                            f"\nDelivery:   {delivery_fps:.1f} FPS"
-                            f"\nLatent:     {sum(latent_times) / 30 * 1000:.1f}ms"
-                            f"\nInference:  {sum(inference_times) / 30 * 1000:.1f}ms (per-frame equiv)"
-                            f"\nJPEG:       {sum(jpeg_times) / 30 * 1000:.1f}ms"
-                            f"\nWebSocket:  {sum(send_times) / 30 * 1000:.1f}ms"
-                        )
-
-                    try:
-                        check_msg = await asyncio.wait_for(
-                            websocket.receive_json(), timeout=0.001
-                        )
-                        if check_msg.get("action") == "stop":
-                            logger.info("Stopping generation")
-                            generating = False
-                    except asyncio.TimeoutError:
-                        pass
+                producer_task = asyncio.create_task(producer())
+                consumer_task = asyncio.create_task(consumer())
 
             elif action == "stop":
-                logger.info("Received stop (not generating)")
+                logger.info("Stopping")
+                stop_event.set()
+                if producer_task:
+                    producer_task.cancel()
+                if consumer_task:
+                    consumer_task.cancel()
 
     except WebSocketDisconnect:
         logger.info("Client disconnected")
     except Exception as e:
-        logger.error(f"Error in stream: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
     finally:
+        stop_event.set()
+        if producer_task:
+            producer_task.cancel()
+        if consumer_task:
+            consumer_task.cancel()
         if _pipeline:
             _pipeline.cleanup()
 

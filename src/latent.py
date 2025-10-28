@@ -1,12 +1,4 @@
-"""Simple circular latent walk generation.
-
-The idea: Move in a circle in latent space for smooth, continuous motion.
-We define two random noise vectors (x and y) and interpolate between them:
-
-    latent(angle) = cos(angle) * noise_x + sin(angle) * noise_y
-
-This creates a circular trajectory that loops smoothly.
-"""
+"""Latent space walk generation."""
 
 import torch
 from typing import Tuple
