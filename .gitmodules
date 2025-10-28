@@ -1,3 +1,0 @@
-[submodule "streamdiffusion"]
-	path = packages/streamdiffusion
-	url = ../StreamDiffusion

@@ -23,7 +23,7 @@ class DiffusionConfig(BaseModel):
         description="specific lora file to load",
     )
     device: Literal["cuda", "mps", "cpu"] = Field(
-        default="cuda", description="compute device"
+        default="mps", description="compute device"
     )
     torch_dtype: Literal["float16", "float32", "bfloat16"] = Field(
         default="float16", description="model precision"

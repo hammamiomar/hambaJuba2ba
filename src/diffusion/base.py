@@ -206,6 +206,7 @@ class BaseDiffusionPipeline(ABC):
         return image
 
     @torch.no_grad()
+    # TODO ! async? or multiprocessing. async to a queue.
     def generate_batch(
         self,
         latents: torch.Tensor,
