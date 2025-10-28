@@ -88,60 +88,196 @@ async def stream_latent_walk(websocket: WebSocket):
     try:
         pipeline, latent_walk, config = await get_or_create_pipeline()
 
-        angle = 0.0
-        frame_count = 0
-
-        latent_times = deque(maxlen=30)
-        inference_times = deque(maxlen=30)
-        jpeg_times = deque(maxlen=30)
-        send_times = deque(maxlen=30)
-        loop_times = deque(maxlen=30)
-
-        logger.info("Starting stream at MAX FPS")
-
         while True:
-            loop_start = time.perf_counter()
+            msg = await websocket.receive_json()
+            action = msg.get("action")
 
-            t0 = time.perf_counter()
-            latent = latent_walk.get_latent(
-                angle, device=config.device, dtype=config.get_torch_dtype()
-            )
-            latent_times.append(time.perf_counter() - t0)
-
-            t1 = time.perf_counter()
-            frame_tensor = pipeline.generate(latent)
-            inference_times.append(time.perf_counter() - t1)
-
-            t2 = time.perf_counter()
-            frame_bytes = tensor_to_jpeg(frame_tensor, quality=config.jpeg_quality)
-            jpeg_times.append(time.perf_counter() - t2)
-
-            t3 = time.perf_counter()
-            await websocket.send_bytes(frame_bytes)
-            send_times.append(time.perf_counter() - t3)
-
-            loop_times.append(time.perf_counter() - loop_start)
-
-            angle = (angle + config.walk_speed) % (2 * math.pi)
-            frame_count += 1
-
-            if frame_count % 30 == 0 and len(loop_times) == 30:
-                gen_time = sum(latent_times) + sum(inference_times) + sum(jpeg_times)
-                gen_fps = 30.0 / gen_time
-                delivery_fps = 30.0 / sum(loop_times)
-
-                logger.info(
-                    f"\nFrame {frame_count} | MAX FPS"
-                    f"\nGeneration: {gen_fps:.1f} FPS"
-                    f"\nDelivery:   {delivery_fps:.1f} FPS"
-                    f"\nLatent:     {sum(latent_times) / 30 * 1000:.1f}ms"
-                    f"\nInference:  {sum(inference_times) / 30 * 1000:.1f}ms"
-                    f"\nJPEG:       {sum(jpeg_times) / 30 * 1000:.1f}ms"
-                    f"\nWebSocket:  {sum(send_times) / 30 * 1000:.1f}ms"
+            if action == "start":
+                prompt = msg.get(
+                    "prompt", "Burger covered in sopping wet oil in a gutter"
                 )
+                logger.info(f"Starting generation with prompt: {prompt}")
+
+                angle = 0.0
+                frame_count = 0
+                generating = True
+
+                latent_times = deque(maxlen=30)
+                inference_times = deque(maxlen=30)
+                jpeg_times = deque(maxlen=30)
+                send_times = deque(maxlen=30)
+                loop_times = deque(maxlen=30)
+
+                while generating:
+                    batch_start = time.perf_counter()
+
+                    angles = [
+                        (angle + i * config.walk_speed) % (2 * math.pi)
+                        for i in range(config.batch_size)
+                    ]
+                    # Latent Noise Creation
+                    t0 = time.perf_counter()
+                    latents_list = [
+                        latent_walk.get_latent(
+                            ang, device=config.device, dtype=config.get_torch_dtype()
+                        )
+                        for ang in angles
+                    ]
+                    latents_batch = torch.cat(latents_list, dim=0)
+                    latent_time = time.perf_counter() - t0
+
+                    # Frame Generation
+                    t1 = time.perf_counter()
+                    frames = pipeline.generate_batch(latents_batch, prompt=prompt)
+                    batch_inference_time = time.perf_counter() - t1
+
+                    for frame in frames:
+                        # Torch Frame to Jpeg
+                        t2 = time.perf_counter()
+                        frame_bytes = tensor_to_jpeg(frame, quality=config.jpeg_quality)
+                        jpeg_time = time.perf_counter() - t2
+
+                        # Jpeg to Socket
+                        t3 = time.perf_counter()
+                        await websocket.send_bytes(frame_bytes)
+                        send_time = time.perf_counter() - t3
+
+                        latent_times.append(latent_time / config.batch_size)
+                        inference_times.append(batch_inference_time / config.batch_size)
+                        jpeg_times.append(jpeg_time)
+                        send_times.append(send_time)
+                        loop_times.append(time.perf_counter() - batch_start)
+                        frame_count += 1
+
+                    angle = angles[-1] + config.walk_speed
+
+                    if frame_count % 30 == 0 and len(loop_times) == 30:
+                        gen_time = (
+                            sum(latent_times) + sum(inference_times) + sum(jpeg_times)
+                        )
+                        gen_fps = 30.0 / gen_time
+                        delivery_fps = 30.0 / sum(loop_times)
+
+                        logger.info(
+                            f"\nFrame {frame_count} | STREAMBATCH (batch={config.batch_size})"
+                            f"\nGeneration: {gen_fps:.1f} FPS"
+                            f"\nDelivery:   {delivery_fps:.1f} FPS"
+                            f"\nLatent:     {sum(latent_times) / 30 * 1000:.1f}ms"
+                            f"\nInference:  {sum(inference_times) / 30 * 1000:.1f}ms (per-frame equiv)"
+                            f"\nJPEG:       {sum(jpeg_times) / 30 * 1000:.1f}ms"
+                            f"\nWebSocket:  {sum(send_times) / 30 * 1000:.1f}ms"
+                        )
+
+                    try:
+                        check_msg = await asyncio.wait_for(
+                            websocket.receive_json(), timeout=0.001
+                        )
+                        if check_msg.get("action") == "stop":
+                            logger.info("Stopping generation")
+                            generating = False
+                    except asyncio.TimeoutError:
+                        pass
+
+            elif action == "stop":
+                logger.info("Received stop (not generating)")
 
     except WebSocketDisconnect:
         logger.info("Client disconnected")
+    except Exception as e:
+        logger.error(f"Error in stream: {e}", exc_info=True)
+    finally:
+        if _pipeline:
+            _pipeline.cleanup()
+
+
+@router.websocket("/ws/generate/single")
+async def stream_latent_walk_single(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("Client connected (SINGLE mode)")
+
+    try:
+        pipeline, latent_walk, config = await get_or_create_pipeline()
+
+        while True:
+            msg = await websocket.receive_json()
+            action = msg.get("action")
+
+            if action == "start":
+                prompt = msg.get(
+                    "prompt", "Burger covered in sopping wet oil in a gutter"
+                )
+                logger.info(f"Starting SINGLE generation with prompt: {prompt}")
+
+                angle = 0.0
+                frame_count = 0
+                generating = True
+
+                latent_times = deque(maxlen=30)
+                inference_times = deque(maxlen=30)
+                jpeg_times = deque(maxlen=30)
+                send_times = deque(maxlen=30)
+                loop_times = deque(maxlen=30)
+
+                while generating:
+                    loop_start = time.perf_counter()
+
+                    t0 = time.perf_counter()
+                    latent = latent_walk.get_latent(
+                        angle, device=config.device, dtype=config.get_torch_dtype()
+                    )
+                    latent_times.append(time.perf_counter() - t0)
+
+                    t1 = time.perf_counter()
+                    frame_tensor = pipeline.generate(latent, prompt=prompt)
+                    inference_times.append(time.perf_counter() - t1)
+
+                    t2 = time.perf_counter()
+                    frame_bytes = tensor_to_jpeg(
+                        frame_tensor, quality=config.jpeg_quality
+                    )
+                    jpeg_times.append(time.perf_counter() - t2)
+
+                    t3 = time.perf_counter()
+                    await websocket.send_bytes(frame_bytes)
+                    send_times.append(time.perf_counter() - t3)
+
+                    loop_times.append(time.perf_counter() - loop_start)
+
+                    angle = (angle + config.walk_speed) % (2 * math.pi)
+                    frame_count += 1
+
+                    if frame_count % 30 == 0 and len(loop_times) == 30:
+                        gen_time = (
+                            sum(latent_times) + sum(inference_times) + sum(jpeg_times)
+                        )
+                        gen_fps = 30.0 / gen_time
+                        delivery_fps = 30.0 / sum(loop_times)
+
+                        logger.info(
+                            f"\nFrame {frame_count} | SINGLE"
+                            f"\nGeneration: {gen_fps:.1f} FPS"
+                            f"\nDelivery:   {delivery_fps:.1f} FPS"
+                            f"\nLatent:     {sum(latent_times) / 30 * 1000:.1f}ms"
+                            f"\nInference:  {sum(inference_times) / 30 * 1000:.1f}ms"
+                            f"\nJPEG:       {sum(jpeg_times) / 30 * 1000:.1f}ms"
+                            f"\nWebSocket:  {sum(send_times) / 30 * 1000:.1f}ms"
+                        )
+
+                    try:
+                        check_msg = await asyncio.wait_for(
+                            websocket.receive_json(), timeout=0.001
+                        )
+                        if check_msg.get("action") == "stop":
+                            logger.info("Stopping generation")
+                            generating = False
+                    except asyncio.TimeoutError:
+                        pass
+
+            elif action == "stop":
+                logger.info("Received stop (not generating)")
+
+    except WebSocketDisconnect:
+        logger.info("Client disconnected (SINGLE mode)")
     except Exception as e:
         logger.error(f"Error in stream: {e}", exc_info=True)
     finally:
