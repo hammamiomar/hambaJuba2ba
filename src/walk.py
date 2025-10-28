@@ -57,6 +57,24 @@ class FourCornerWalk:
         self.angle += delta
         self.angle = self.angle % (2 * torch.pi)
 
+    def step_directed(self, dx: float, dy: float, magnitude: float = 1.0):
+        """Step in user-specified direction.
+
+        Args:
+            dx: X direction in [-1, 1]
+            dy: Y direction in [-1, 1]
+            magnitude: Speed multiplier
+        """
+        delta_angle = torch.atan2(torch.tensor(dy), torch.tensor(dx)).item()
+        step_size = magnitude * 0.1
+        self.angle = (self.angle + delta_angle * step_size) % (2 * torch.pi)
+
+    def get_position(self) -> tuple[float, float]:
+        """Get current position in 2D space [0, 1] x [0, 1]."""
+        x = (torch.cos(self.angle) + 1) / 2
+        y = (torch.sin(self.angle) + 1) / 2
+        return (x.item(), y.item())
+
     def get(self, device: str, dtype: torch.dtype) -> torch.Tensor:
         """Get interpolated tensor at current angle."""
         x = (torch.cos(self.angle) + 1) / 2

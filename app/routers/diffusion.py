@@ -82,7 +82,13 @@ def tensor_to_jpeg(tensor: torch.Tensor, quality: int = 85) -> bytes:
 
 
 def generate_batch_sync(
-    pipeline, noise_walk, prompt_walk, config, batch_size
+    pipeline,
+    noise_walk,
+    prompt_walk,
+    config,
+    batch_size,
+    prompt_vec,
+    latent_vec,
 ) -> tuple[list[bytes], dict]:
     """GPU-bound batch generation (runs in executor)."""
     t0 = time.perf_counter()
@@ -91,18 +97,27 @@ def generate_batch_sync(
     latents_list = []
     embeds_list = []
     for i in range(batch_size):
-        noise_walk.step()
-        prompt_walk.step()
-        latents_list.append(
-            noise_walk.get(config.device, config.get_torch_dtype())
-        )
-        embeds_list.append(
-            prompt_walk.get(config.device, config.get_torch_dtype())
-        )
+        # Use directed step if user is controlling, else random
+        if prompt_vec[2] > 0.01:
+            prompt_walk.step_directed(prompt_vec[0], prompt_vec[1], prompt_vec[2])
+        else:
+            prompt_walk.step()
+
+        if latent_vec[2] > 0.01:
+            noise_walk.step_directed(latent_vec[0], latent_vec[1], latent_vec[2])
+        else:
+            noise_walk.step()
+
+        latents_list.append(noise_walk.get(config.device, config.get_torch_dtype()))
+        embeds_list.append(prompt_walk.get(config.device, config.get_torch_dtype()))
 
     latents_batch = torch.cat(latents_list, dim=0)
     embeds_batch = torch.cat(embeds_list, dim=0)
     walk_time = time.perf_counter() - t0
+
+    # Get positions for edge detection
+    prompt_pos = prompt_walk.get_position()
+    latent_pos = noise_walk.get_position()
 
     # Inference
     t1 = time.perf_counter()
@@ -121,6 +136,8 @@ def generate_batch_sync(
         "inference_time": inference_time,
         "jpeg_time": jpeg_time,
         "batch_time": time.perf_counter() - t0,
+        "prompt_pos": prompt_pos,
+        "latent_pos": latent_pos,
     }
 
     return frame_bytes_list, metrics
@@ -134,6 +151,12 @@ async def stream_latent_walk(websocket: WebSocket):
     producer_task = None
     consumer_task = None
     stop_event = asyncio.Event()
+
+    # Direction control state
+    direction_state = {
+        "prompt_vec": [0.0, 0.0, 0.0],
+        "latent_vec": [0.0, 0.0, 0.0],
+    }
 
     try:
         pipeline, latent_walk, config = await get_or_create_pipeline()
@@ -168,6 +191,7 @@ async def stream_latent_walk(websocket: WebSocket):
                 async def producer():
                     loop = asyncio.get_event_loop()
                     batch_times = deque(maxlen=10)
+                    frame_count = 0
 
                     while not stop_event.is_set():
                         t_start = time.perf_counter()
@@ -179,12 +203,35 @@ async def stream_latent_walk(websocket: WebSocket):
                             prompt_walk,
                             config,
                             config.batch_size,
+                            direction_state["prompt_vec"],
+                            direction_state["latent_vec"],
                         )
 
                         for frame_bytes in frame_bytes_list:
                             await frame_queue.put(frame_bytes)
 
                         batch_times.append(time.perf_counter() - t_start)
+                        frame_count += config.batch_size
+
+                        # Send edge proximity every 10 frames
+                        if frame_count % 10 == 0:
+                            prompt_x, prompt_y = metrics["prompt_pos"]
+                            latent_x, latent_y = metrics["latent_pos"]
+
+                            prompt_proximity = max(
+                                abs(prompt_x - 0.5), abs(prompt_y - 0.5)
+                            ) * 2
+                            latent_proximity = max(
+                                abs(latent_x - 0.5), abs(latent_y - 0.5)
+                            ) * 2
+
+                            await websocket.send_json(
+                                {
+                                    "type": "edge_proximity",
+                                    "prompt": prompt_proximity,
+                                    "latent": latent_proximity,
+                                }
+                            )
 
                         if len(batch_times) == 10:
                             avg_batch_time = sum(batch_times) / 10
@@ -233,6 +280,10 @@ async def stream_latent_walk(websocket: WebSocket):
 
                 producer_task = asyncio.create_task(producer())
                 consumer_task = asyncio.create_task(consumer())
+
+            elif action == "update_direction":
+                direction_state["prompt_vec"] = msg.get("prompt_vec", [0.0, 0.0, 0.0])
+                direction_state["latent_vec"] = msg.get("latent_vec", [0.0, 0.0, 0.0])
 
             elif action == "stop":
                 logger.info("Stopping")

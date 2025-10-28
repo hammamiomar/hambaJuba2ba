@@ -3,6 +3,7 @@ import { Canvas } from "./components/Canvas";
 import type { CanvasHandle } from "./components/Canvas";
 import { Controls } from "./components/Controls";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { VectorField } from "./components/VectorField";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { WS_CONFIG } from "./constants";
 import type { Metrics } from "./types";
@@ -15,15 +16,27 @@ function App() {
   );
   const [targetPrompt, setTargetPrompt] = useState("steamy burger");
 
+  const [promptEdgeProximity, setPromptEdgeProximity] = useState(0);
+  const [latentEdgeProximity, setLatentEdgeProximity] = useState(0);
+
   const handleFrame = useCallback(async (data: ArrayBuffer) => {
     await canvasRef.current?.renderFrame(data);
   }, []);
+
+  const handleEdgeProximity = useCallback(
+    (prompt: number, latent: number) => {
+      setPromptEdgeProximity(prompt);
+      setLatentEdgeProximity(latent);
+    },
+    [],
+  );
 
   const {
     connect,
     disconnect,
     sendStart,
     sendStop,
+    sendDirectionUpdate,
     status,
     fps,
     isGenerating,
@@ -31,6 +44,7 @@ function App() {
   } = useWebSocket({
     url: WS_CONFIG.URL,
     onFrame: handleFrame,
+    onEdgeProximity: handleEdgeProximity,
     autoConnect: false,
     enableReconnect: true,
   });
@@ -38,6 +52,20 @@ function App() {
   const handleStart = useCallback(() => {
     sendStart(sourcePrompt, targetPrompt);
   }, [sendStart, sourcePrompt, targetPrompt]);
+
+  const handlePromptVector = useCallback(
+    (dx: number, dy: number, magnitude: number) => {
+      sendDirectionUpdate?.(dx, dy, magnitude, 0, 0, 0);
+    },
+    [sendDirectionUpdate],
+  );
+
+  const handleLatentVector = useCallback(
+    (dx: number, dy: number, magnitude: number) => {
+      sendDirectionUpdate?.(0, 0, 0, dx, dy, magnitude);
+    },
+    [sendDirectionUpdate],
+  );
 
   const metrics: Metrics = {
     fps,
@@ -64,6 +92,20 @@ function App() {
           onTargetPromptChange={setTargetPrompt}
           reconnectAttempts={reconnectAttempts}
         />
+
+        {/* Vector field controls */}
+        <div className="absolute bottom-8 left-1/2 flex -translate-x-1/2 gap-8">
+          <VectorField
+            label="Prompt"
+            edgeProximity={promptEdgeProximity}
+            onVectorChange={handlePromptVector}
+          />
+          <VectorField
+            label="Latent"
+            edgeProximity={latentEdgeProximity}
+            onVectorChange={handleLatentVector}
+          />
+        </div>
       </div>
     </ErrorBoundary>
   );

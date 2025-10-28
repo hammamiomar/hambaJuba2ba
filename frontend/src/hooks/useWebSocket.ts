@@ -13,6 +13,9 @@ interface UseWebSocketOptions {
    */
   onFrame?: (data: ArrayBuffer) => void;
 
+  /** Callback fired when edge proximity update is received */
+  onEdgeProximity?: (prompt: number, latent: number) => void;
+
   /** Auto-connect on mount */
   autoConnect?: boolean;
 
@@ -36,6 +39,16 @@ interface UseWebSocketReturn {
   /** Send stop message to stop generation */
   sendStop: () => void;
 
+  /** Send direction update for vector field control */
+  sendDirectionUpdate: (
+    promptDx: number,
+    promptDy: number,
+    promptMag: number,
+    latentDx: number,
+    latentDy: number,
+    latentMag: number,
+  ) => void;
+
   /** Current connection status */
   status: ConnectionStatus;
 
@@ -52,6 +65,7 @@ interface UseWebSocketReturn {
 export function useWebSocket({
   url,
   onFrame,
+  onEdgeProximity,
   autoConnect = false,
   enableReconnect = true,
 }: UseWebSocketOptions): UseWebSocketReturn {
@@ -75,12 +89,12 @@ export function useWebSocket({
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
-  // Defensive onFrame callback assignment. This is because we want to avoid
-  // calling Connect() again, if we change the onFrame callback--therefore
-  // removing onFrame from our dependency array
+  // Defensive callback assignment
   const onFrameRef = useRef(onFrame);
+  const onEdgeProximityRef = useRef(onEdgeProximity);
   useEffect(() => {
     onFrameRef.current = onFrame;
+    onEdgeProximityRef.current = onEdgeProximity;
   });
 
   /**
@@ -128,12 +142,13 @@ export function useWebSocket({
           lastFpsUpdateRef.current = now;
         }
       }
-      // Handle JSON metadata (for future use)
+      // Handle JSON messages
       else if (typeof event.data === "string") {
         try {
-          const metadata = JSON.parse(event.data);
-          console.log("[useWebSocket] Received metadata:", metadata);
-          // TODO: Handle backend metrics here
+          const message = JSON.parse(event.data);
+          if (message.type === "edge_proximity" && onEdgeProximityRef.current) {
+            onEdgeProximityRef.current(message.prompt, message.latent);
+          }
         } catch (e) {
           console.warn("[useWebSocket] Failed to parse JSON message:", e);
         }
@@ -225,6 +240,31 @@ export function useWebSocket({
   }, []);
 
   /**
+   * Send direction update for vector field control
+   */
+  const sendDirectionUpdate = useCallback(
+    (
+      promptDx: number,
+      promptDy: number,
+      promptMag: number,
+      latentDx: number,
+      latentDy: number,
+      latentMag: number,
+    ) => {
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(
+          JSON.stringify({
+            action: "update_direction",
+            prompt_vec: [promptDx, promptDy, promptMag],
+            latent_vec: [latentDx, latentDy, latentMag],
+          }),
+        );
+      }
+    },
+    [],
+  );
+
+  /**
    * Auto-connect effect (only runs when autoConnect or url changes)
    */
   useEffect(() => {
@@ -243,6 +283,7 @@ export function useWebSocket({
     disconnect,
     sendStart,
     sendStop,
+    sendDirectionUpdate,
     status,
     fps,
     isGenerating,
