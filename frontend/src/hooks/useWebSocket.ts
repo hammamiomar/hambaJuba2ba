@@ -109,8 +109,9 @@ export function useWebSocket({
         // Update FPS counter
         frameCountRef.current++;
         const now = Date.now();
-        if (now - lastFpsUpdateRef.current >= PERF_CONFIG.FPS_UPDATE_INTERVAL) {
-          setFps(frameCountRef.current);
+        const elapsed = now - lastFpsUpdateRef.current;
+        if (elapsed >= PERF_CONFIG.FPS_UPDATE_INTERVAL) {
+          setFps(frameCountRef.current / (elapsed / 1000));
           frameCountRef.current = 0;
           lastFpsUpdateRef.current = now;
         }
