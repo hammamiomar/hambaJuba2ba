@@ -30,11 +30,20 @@ interface UseWebSocketReturn {
   /** Close WebSocket connection */
   disconnect: () => void;
 
+  /** Send start message to begin generation */
+  sendStart: (prompt?: string) => void;
+
+  /** Send stop message to stop generation */
+  sendStop: () => void;
+
   /** Current connection status */
   status: ConnectionStatus;
 
   /** Frames received per second */
   fps: number;
+
+  /** Whether generation is currently active */
+  isGenerating: boolean;
 
   /** Number of reconnection attempts (for debugging) */
   reconnectAttempts: number;
@@ -53,6 +62,9 @@ export function useWebSocket({
   const [status, setStatus] = useState<ConnectionStatus>(
     ConnectionStatus.DISCONNECTED,
   );
+
+  // Generation state
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // FPS tracking
   const [fps, setFps] = useState(0);
@@ -176,7 +188,30 @@ export function useWebSocket({
       ws.current = null;
       setStatus(ConnectionStatus.DISCONNECTED);
       setFps(0);
+      setIsGenerating(false);
       setReconnectAttempts(0);
+    }
+  }, []);
+
+  /**
+   * Send start message to begin generation
+   */
+  const sendStart = useCallback((prompt?: string) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      console.log("[useWebSocket] Sending start message");
+      ws.current.send(JSON.stringify({ action: "start", prompt }));
+      setIsGenerating(true);
+    }
+  }, []);
+
+  /**
+   * Send stop message to stop generation
+   */
+  const sendStop = useCallback(() => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      console.log("[useWebSocket] Sending stop message");
+      ws.current.send(JSON.stringify({ action: "stop" }));
+      setIsGenerating(false);
     }
   }, []);
 
@@ -197,8 +232,11 @@ export function useWebSocket({
   return {
     connect,
     disconnect,
+    sendStart,
+    sendStop,
     status,
     fps,
+    isGenerating,
     reconnectAttempts,
   };
 }

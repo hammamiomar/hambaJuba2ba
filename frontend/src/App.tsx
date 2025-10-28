@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState } from "react";
 import { Canvas } from "./components/Canvas";
 import type { CanvasHandle } from "./components/Canvas";
 import { Controls } from "./components/Controls";
@@ -8,38 +8,38 @@ import { WS_CONFIG } from "./constants";
 import type { Metrics } from "./types";
 
 function App() {
-  /**
-   * Reference to Canvas component for imperative rendering
-   */
   const canvasRef = useRef<CanvasHandle>(null);
 
-  /**
-   * Frame handler: called when WebSocket receives a frame
-   * Wrapped in useCallback to maintain stable reference
-   * (though useWebSocket uses useRef pattern, this is still good practice)
-   */
+  const [prompt, setPrompt] = useState(
+    "Moldy Burger in a sopping wet sewer, grimy, high quality",
+  );
+
   const handleFrame = useCallback(async (data: ArrayBuffer) => {
     await canvasRef.current?.renderFrame(data);
   }, []);
 
-  /**
-   * WebSocket hook for connection management and frame streaming
-   */
-  const { connect, disconnect, status, fps, reconnectAttempts } = useWebSocket({
+  const {
+    connect,
+    disconnect,
+    sendStart,
+    sendStop,
+    status,
+    fps,
+    isGenerating,
+    reconnectAttempts,
+  } = useWebSocket({
     url: WS_CONFIG.URL,
     onFrame: handleFrame,
     autoConnect: false,
     enableReconnect: true,
   });
 
-  /**
-   * Combine metrics for display
-   */
+  const handleStart = useCallback(() => {
+    sendStart(prompt);
+  }, [sendStart, prompt]);
+
   const metrics: Metrics = {
     fps,
-    // Backend metrics will be added here when StreamDiffusion is integrated
-    // inferenceTimeEmaMs: ...,
-    // latencyMs: ...,
   };
 
   return (
@@ -49,12 +49,16 @@ function App() {
         {/* Canvas: fills entire screen */}
         <Canvas ref={canvasRef} className="w-full h-full" />
 
-        {/* Controls: overlay panel */}
         <Controls
           status={status}
           metrics={metrics}
           onConnect={connect}
           onDisconnect={disconnect}
+          onStart={handleStart}
+          onStop={sendStop}
+          isGenerating={isGenerating}
+          prompt={prompt}
+          onPromptChange={setPrompt}
           reconnectAttempts={reconnectAttempts}
         />
       </div>

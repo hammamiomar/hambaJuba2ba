@@ -8,6 +8,11 @@ interface ControlsProps {
   metrics: Metrics;
   onConnect: () => void;
   onDisconnect: () => void;
+  onStart: () => void;
+  onStop: () => void;
+  isGenerating: boolean;
+  prompt: string;
+  onPromptChange: (prompt: string) => void;
   reconnectAttempts?: number;
 }
 
@@ -16,6 +21,11 @@ export function Controls({
   metrics,
   onConnect,
   onDisconnect,
+  onStart,
+  onStop,
+  isGenerating,
+  prompt,
+  onPromptChange,
   reconnectAttempts = 0,
 }: ControlsProps) {
   const isConnected = status === ConnectionStatus.CONNECTED;
@@ -107,21 +117,61 @@ export function Controls({
 
         {/* Connection controls */}
         <div className="mb-6 space-y-3">
-          <button
-            onClick={onConnect}
-            disabled={isConnected || isConnecting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#8B9A7E]/20 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-inner shadow-[#8B9A7E]/20 transition focus:outline-none data-hover:bg-[#8B9A7E]/30 data-focus:outline data-focus:outline-1 data-focus:outline-[#8B9A7E] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {isConnecting ? "Connecting..." : "Connect"}
-          </button>
+          <div className="flex gap-0">
+            <button
+              onClick={onConnect}
+              disabled={isConnected || isConnecting}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-[#8B9A7E]/20 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-inner shadow-[#8B9A7E]/20 transition focus:outline-none data-hover:bg-[#8B9A7E]/30 data-focus:outline data-focus:outline-1 data-focus:outline-[#8B9A7E] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnecting ? "Connecting..." : "Connect"}
+            </button>
 
-          <button
-            onClick={onDisconnect}
-            disabled={!isConnected && !isConnecting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#8B9A7E]/20 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-inner shadow-[#8B9A7E]/20 transition focus:outline-none data-hover:bg-[#8B9A7E]/30 data-focus:outline data-focus:outline-1 data-focus:outline-[#8B9A7E] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Disconnect
-          </button>
+            <button
+              onClick={onDisconnect}
+              disabled={!isConnected && !isConnecting}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-[#8B9A7E]/20 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-inner shadow-[#8B9A7E]/20 transition focus:outline-none data-hover:bg-[#8B9A7E]/30 data-focus:outline data-focus:outline-1 data-focus:outline-[#8B9A7E] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Disconnect
+            </button>
+          </div>
+
+          <div className="flex gap-0">
+            <button
+              onClick={onStart}
+              disabled={!isConnected || isGenerating}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-green-600/80 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-inner shadow-green-700/20 transition focus:outline-none data-hover:bg-green-600 data-focus:outline data-focus:outline-1 data-focus:outline-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg className="size-4" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M3 3.732a1.5 1.5 0 0 1 2.305-1.265l6.706 4.267a1.5 1.5 0 0 1 0 2.531l-6.706 4.268A1.5 1.5 0 0 1 3 12.267V3.732Z" />
+              </svg>
+              Start
+            </button>
+
+            <button
+              onClick={onStop}
+              disabled={!isConnected || !isGenerating}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-red-600/80 px-3 py-1.5 text-sm/6 font-semibold text-white shadow-inner shadow-red-700/20 transition focus:outline-none data-hover:bg-red-600 data-focus:outline data-focus:outline-1 data-focus:outline-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg className="size-4" viewBox="0 0 16 16" fill="currentColor">
+                <rect x="4" y="4" width="8" height="8" rx="1" />
+              </svg>
+              Stop
+            </button>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-white/50">
+              Prompt
+            </label>
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => onPromptChange(e.target.value)}
+              disabled={isGenerating}
+              placeholder="abstract colorful flowing shapes..."
+              className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
+            />
+          </div>
         </div>
 
         {/* Metrics */}
