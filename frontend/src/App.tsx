@@ -15,7 +15,15 @@ function App() {
     "Moldy Burger in a sopping wet sewer, grimy, high quality",
   );
   const [targetPrompt, setTargetPrompt] = useState("steamy burger");
+  const [promptC, setPromptC] = useState("crispy golden fries");
+  const [promptD, setPromptD] = useState("fresh green salad");
 
+  const [promptPos, setPromptPos] = useState<[number, number, number]>([
+    0.5, 0.5, 0.5,
+  ]);
+  const [latentPos, setLatentPos] = useState<[number, number, number]>([
+    0.5, 0.5, 0.5,
+  ]);
   const [promptEdgeProximity, setPromptEdgeProximity] = useState(0);
   const [latentEdgeProximity, setLatentEdgeProximity] = useState(0);
 
@@ -23,10 +31,17 @@ function App() {
     await canvasRef.current?.renderFrame(data);
   }, []);
 
-  const handleEdgeProximity = useCallback(
-    (prompt: number, latent: number) => {
-      setPromptEdgeProximity(prompt);
-      setLatentEdgeProximity(latent);
+  const handlePositionUpdate = useCallback(
+    (
+      promptPosition: [number, number, number],
+      latentPosition: [number, number, number],
+      promptProx: number,
+      latentProx: number,
+    ) => {
+      setPromptPos(promptPosition);
+      setLatentPos(latentPosition);
+      setPromptEdgeProximity(promptProx);
+      setLatentEdgeProximity(latentProx);
     },
     [],
   );
@@ -44,25 +59,25 @@ function App() {
   } = useWebSocket({
     url: WS_CONFIG.URL,
     onFrame: handleFrame,
-    onEdgeProximity: handleEdgeProximity,
+    onPositionUpdate: handlePositionUpdate,
     autoConnect: false,
     enableReconnect: true,
   });
 
   const handleStart = useCallback(() => {
-    sendStart(sourcePrompt, targetPrompt);
-  }, [sendStart, sourcePrompt, targetPrompt]);
+    sendStart(sourcePrompt, targetPrompt, promptC, promptD);
+  }, [sendStart, sourcePrompt, targetPrompt, promptC, promptD]);
 
   const handlePromptVector = useCallback(
-    (dx: number, dy: number, magnitude: number) => {
-      sendDirectionUpdate?.(dx, dy, magnitude, 0, 0, 0);
+    (dx: number, dy: number, dz: number, magnitude: number) => {
+      sendDirectionUpdate?.(dx, dy, dz, magnitude, 0, 0, 0, 0);
     },
     [sendDirectionUpdate],
   );
 
   const handleLatentVector = useCallback(
-    (dx: number, dy: number, magnitude: number) => {
-      sendDirectionUpdate?.(0, 0, 0, dx, dy, magnitude);
+    (dx: number, dy: number, dz: number, magnitude: number) => {
+      sendDirectionUpdate?.(0, 0, 0, 0, dx, dy, dz, magnitude);
     },
     [sendDirectionUpdate],
   );
@@ -90,6 +105,10 @@ function App() {
           onSourcePromptChange={setSourcePrompt}
           targetPrompt={targetPrompt}
           onTargetPromptChange={setTargetPrompt}
+          promptC={promptC}
+          onPromptCChange={setPromptC}
+          promptD={promptD}
+          onPromptDChange={setPromptD}
           reconnectAttempts={reconnectAttempts}
         />
 
@@ -97,11 +116,13 @@ function App() {
         <div className="absolute bottom-8 left-1/2 flex -translate-x-1/2 gap-8">
           <VectorField
             label="Prompt"
+            position={promptPos}
             edgeProximity={promptEdgeProximity}
             onVectorChange={handlePromptVector}
           />
           <VectorField
             label="Latent"
+            position={latentPos}
             edgeProximity={latentEdgeProximity}
             onVectorChange={handleLatentVector}
           />

@@ -15,6 +15,10 @@ interface ControlsProps {
   onSourcePromptChange: (prompt: string) => void;
   targetPrompt: string;
   onTargetPromptChange: (prompt: string) => void;
+  promptC: string;
+  onPromptCChange: (prompt: string) => void;
+  promptD: string;
+  onPromptDChange: (prompt: string) => void;
   reconnectAttempts?: number;
 }
 
@@ -30,6 +34,10 @@ export function Controls({
   onSourcePromptChange,
   targetPrompt,
   onTargetPromptChange,
+  promptC,
+  onPromptCChange,
+  promptD,
+  onPromptDChange,
   reconnectAttempts = 0,
 }: ControlsProps) {
   const isConnected = status === ConnectionStatus.CONNECTED;
@@ -187,6 +195,34 @@ export function Controls({
               onChange={(e) => onTargetPromptChange(e.target.value)}
               disabled={isGenerating}
               placeholder="steamy burger..."
+              className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-white/50">
+              Prompt C
+            </label>
+            <input
+              type="text"
+              value={promptC}
+              onChange={(e) => onPromptCChange(e.target.value)}
+              disabled={isGenerating}
+              placeholder="crispy fries..."
+              className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-white/50">
+              Prompt D
+            </label>
+            <input
+              type="text"
+              value={promptD}
+              onChange={(e) => onPromptDChange(e.target.value)}
+              disabled={isGenerating}
+              placeholder="fresh salad..."
               className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
             />
           </div>

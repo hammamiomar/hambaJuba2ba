@@ -2,22 +2,24 @@ import { useRef, useEffect, useState } from "react";
 
 interface VectorFieldProps {
   label: string;
-  edgeProximity: number; // 0-1, where 1 is at edge
-  onVectorChange: (dx: number, dy: number, magnitude: number) => void;
+  edgeProximity: number;
+  position: [number, number, number]; // x, y, z in [0, 1]
+  onVectorChange: (dx: number, dy: number, dz: number, magnitude: number) => void;
 }
 
 export function VectorField({
   label,
   edgeProximity,
+  position,
   onVectorChange,
 }: VectorFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isActive, setIsActive] = useState(false);
-  const [vector, setVector] = useState({ dx: 0, dy: 0, magnitude: 0 });
+  const [vector, setVector] = useState({ dx: 0, dy: 0, dz: 0, magnitude: 0 });
+  const [zMode, setZMode] = useState<"none" | "up" | "down">("none");
 
   const SIZE = 200;
   const CENTER = SIZE / 2;
-  const GRID_SIZE = 4;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -26,50 +28,78 @@ export function VectorField({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Clear
     ctx.clearRect(0, 0, SIZE, SIZE);
 
-    // Draw 16 dots
-    const spacing = SIZE / (GRID_SIZE + 1);
-    for (let i = 1; i <= GRID_SIZE; i++) {
-      for (let j = 1; j <= GRID_SIZE; j++) {
-        const x = i * spacing;
-        const y = j * spacing;
+    // Current position (deep purple)
+    const posX = position[0] * SIZE;
+    const posY = position[1] * SIZE;
 
+    // Calculate preview position if active
+    let previewX = posX;
+    let previewY = posY;
+    if (isActive && vector.magnitude > 0.01) {
+      const stepSize = 0.05;
+      previewX = Math.max(
+        0,
+        Math.min(SIZE, posX + vector.dx * stepSize * SIZE),
+      );
+      previewY = Math.max(
+        0,
+        Math.min(SIZE, posY + vector.dy * stepSize * SIZE),
+      );
+
+      // Draw dotted line if positions are far apart
+      const distance = Math.sqrt(
+        (previewX - posX) ** 2 + (previewY - posY) ** 2,
+      );
+      if (distance > 20) {
         ctx.beginPath();
-        ctx.arc(x, y, 2, 0, 2 * Math.PI);
-
-        // Color based on edge proximity
-        if (edgeProximity > 0.95) {
-          ctx.fillStyle = "rgba(239, 68, 68, 1)"; // Solid red
-        } else if (edgeProximity > 0.8) {
-          const flash = Math.sin(Date.now() / 200) * 0.5 + 0.5;
-          ctx.fillStyle = `rgba(239, 68, 68, ${flash})`;
-        } else {
-          ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-        }
-
-        ctx.fill();
+        ctx.setLineDash([3, 3]);
+        ctx.moveTo(posX, posY);
+        ctx.lineTo(previewX, previewY);
+        ctx.strokeStyle = "rgba(156, 163, 175, 0.6)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
+
+      // Draw preview position (grey translucent)
+      ctx.beginPath();
+      ctx.arc(previewX, previewY, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = "rgba(156, 163, 175, 0.5)";
+      ctx.fill();
     }
 
-    // Draw arrow if active
+    // Draw current position (deep purple)
+    ctx.beginPath();
+    ctx.arc(posX, posY, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(88, 28, 135, 1)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw arrow if active (smaller)
     if (isActive && vector.magnitude > 0.01) {
-      const arrowLength = vector.magnitude * CENTER * 0.8;
-      const angle = Math.atan2(vector.dy, vector.dx);
+      const arrowLength = vector.magnitude * CENTER * 0.5;
+      const angle =
+        zMode === "none"
+          ? Math.atan2(vector.dy, vector.dx)
+          : vector.dy > 0
+            ? Math.PI / 2
+            : -Math.PI / 2;
       const endX = CENTER + Math.cos(angle) * arrowLength;
       const endY = CENTER + Math.sin(angle) * arrowLength;
 
-      // Arrow shaft
       ctx.beginPath();
       ctx.moveTo(CENTER, CENTER);
       ctx.lineTo(endX, endY);
       ctx.strokeStyle = `rgba(147, 51, 234, ${0.5 + vector.magnitude * 0.5})`;
-      ctx.lineWidth = 2 + vector.magnitude * 3;
+      ctx.lineWidth = 1.5 + vector.magnitude * 2;
       ctx.stroke();
 
-      // Arrow head
-      const headSize = 8 + vector.magnitude * 8;
+      // Arrow head (smaller)
+      const headSize = 6 + vector.magnitude * 4;
       ctx.beginPath();
       ctx.moveTo(endX, endY);
       ctx.lineTo(
@@ -84,7 +114,7 @@ export function VectorField({
       ctx.fillStyle = `rgba(147, 51, 234, ${0.5 + vector.magnitude * 0.5})`;
       ctx.fill();
     }
-  }, [isActive, vector, edgeProximity]);
+  }, [isActive, vector, edgeProximity, position, zMode]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     setIsActive(true);
@@ -101,21 +131,73 @@ export function VectorField({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const dx = (x - CENTER) / CENTER;
-    const dy = (y - CENTER) / CENTER;
+    let dx = 0,
+      dy = 0,
+      dz = 0;
+
+    if (zMode === "none") {
+      // XY mode
+      dx = (x - CENTER) / CENTER;
+      dy = (y - CENTER) / CENTER;
+    } else {
+      // Z mode (space bar)
+      dz = (CENTER - y) / CENTER;
+      dy = (y - CENTER) / CENTER; // For arrow visual
+    }
+
     const magnitude = Math.min(
-      Math.sqrt(dx * dx + dy * dy),
+      Math.sqrt(dx * dx + dy * dy + dz * dz),
       1.0,
     );
 
-    setVector({ dx, dy, magnitude });
-    onVectorChange(dx, dy, magnitude);
+    setVector({ dx, dy, dz, magnitude });
+    onVectorChange(dx, dy, dz, magnitude);
   };
 
   const handleMouseUp = () => {
     setIsActive(false);
-    setVector({ dx: 0, dy: 0, magnitude: 0 });
-    onVectorChange(0, 0, 0);
+    setVector({ dx: 0, dy: 0, dz: 0, magnitude: 0 });
+    onVectorChange(0, 0, 0, 0);
+  };
+
+  // Keyboard handling for space bar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === " " && zMode === "none") {
+        e.preventDefault();
+        setZMode("up");
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === " ") {
+        e.preventDefault();
+        setZMode("none");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [zMode]);
+
+  // Border color based on edge proximity
+  const getBorderClass = () => {
+    if (edgeProximity > 0.95) {
+      return "border-red-500";
+    } else if (edgeProximity > 0.8) {
+      return "border-red-500 animate-pulse";
+    }
+    return "border-white/10";
+  };
+
+  const getModeText = () => {
+    if (zMode === "up") return "Z Mode (Space)";
+    return "XY Mode";
   };
 
   return (
@@ -131,8 +213,15 @@ export function VectorField({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        className="cursor-crosshair rounded-lg border border-white/10 bg-gray-900/20 backdrop-blur-lg"
+        className={`cursor-crosshair rounded-lg border-2 bg-gray-900/20 backdrop-blur-lg ${getBorderClass()}`}
       />
+      <div className="flex flex-col items-center gap-1 text-xs">
+        <span className="font-mono text-white/70">
+          ({position[0].toFixed(2)}, {position[1].toFixed(2)},{" "}
+          {position[2].toFixed(2)})
+        </span>
+        <span className="text-white/50">{getModeText()}</span>
+      </div>
     </div>
   );
 }

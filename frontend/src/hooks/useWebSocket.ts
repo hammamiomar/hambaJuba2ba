@@ -13,8 +13,13 @@ interface UseWebSocketOptions {
    */
   onFrame?: (data: ArrayBuffer) => void;
 
-  /** Callback fired when edge proximity update is received */
-  onEdgeProximity?: (prompt: number, latent: number) => void;
+  /** Callback fired when position update is received */
+  onPositionUpdate?: (
+    promptPos: [number, number, number],
+    latentPos: [number, number, number],
+    promptProximity: number,
+    latentProximity: number,
+  ) => void;
 
   /** Auto-connect on mount */
   autoConnect?: boolean;
@@ -34,7 +39,12 @@ interface UseWebSocketReturn {
   disconnect: () => void;
 
   /** Send start message to begin generation */
-  sendStart: (sourcePrompt?: string, targetPrompt?: string) => void;
+  sendStart: (
+    sourcePrompt?: string,
+    targetPrompt?: string,
+    promptC?: string,
+    promptD?: string,
+  ) => void;
 
   /** Send stop message to stop generation */
   sendStop: () => void;
@@ -43,9 +53,11 @@ interface UseWebSocketReturn {
   sendDirectionUpdate: (
     promptDx: number,
     promptDy: number,
+    promptDz: number,
     promptMag: number,
     latentDx: number,
     latentDy: number,
+    latentDz: number,
     latentMag: number,
   ) => void;
 
@@ -65,7 +77,7 @@ interface UseWebSocketReturn {
 export function useWebSocket({
   url,
   onFrame,
-  onEdgeProximity,
+  onPositionUpdate,
   autoConnect = false,
   enableReconnect = true,
 }: UseWebSocketOptions): UseWebSocketReturn {
@@ -91,10 +103,10 @@ export function useWebSocket({
 
   // Defensive callback assignment
   const onFrameRef = useRef(onFrame);
-  const onEdgeProximityRef = useRef(onEdgeProximity);
+  const onPositionUpdateRef = useRef(onPositionUpdate);
   useEffect(() => {
     onFrameRef.current = onFrame;
-    onEdgeProximityRef.current = onEdgeProximity;
+    onPositionUpdateRef.current = onPositionUpdate;
   });
 
   /**
@@ -146,8 +158,13 @@ export function useWebSocket({
       else if (typeof event.data === "string") {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === "edge_proximity" && onEdgeProximityRef.current) {
-            onEdgeProximityRef.current(message.prompt, message.latent);
+          if (message.type === "position_update" && onPositionUpdateRef.current) {
+            onPositionUpdateRef.current(
+              message.prompt_pos,
+              message.latent_pos,
+              message.prompt_proximity,
+              message.latent_proximity,
+            );
           }
         } catch (e) {
           console.warn("[useWebSocket] Failed to parse JSON message:", e);
@@ -212,7 +229,12 @@ export function useWebSocket({
    * Send start message to begin generation
    */
   const sendStart = useCallback(
-    (sourcePrompt?: string, targetPrompt?: string) => {
+    (
+      sourcePrompt?: string,
+      targetPrompt?: string,
+      promptC?: string,
+      promptD?: string,
+    ) => {
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         console.log("[useWebSocket] Sending start message");
         ws.current.send(
@@ -220,6 +242,8 @@ export function useWebSocket({
             action: "start",
             source_prompt: sourcePrompt,
             target_prompt: targetPrompt,
+            prompt_c: promptC,
+            prompt_d: promptD,
           }),
         );
         setIsGenerating(true);
@@ -246,17 +270,19 @@ export function useWebSocket({
     (
       promptDx: number,
       promptDy: number,
+      promptDz: number,
       promptMag: number,
       latentDx: number,
       latentDy: number,
+      latentDz: number,
       latentMag: number,
     ) => {
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         ws.current.send(
           JSON.stringify({
             action: "update_direction",
-            prompt_vec: [promptDx, promptDy, promptMag],
-            latent_vec: [latentDx, latentDy, latentMag],
+            prompt_vec: [promptDx, promptDy, promptDz, promptMag],
+            latent_vec: [latentDx, latentDy, latentDz, latentMag],
           }),
         );
       }

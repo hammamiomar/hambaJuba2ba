@@ -98,13 +98,17 @@ def generate_batch_sync(
     embeds_list = []
     for i in range(batch_size):
         # Use directed step if user is controlling, else random
-        if prompt_vec[2] > 0.01:
-            prompt_walk.step_directed(prompt_vec[0], prompt_vec[1], prompt_vec[2])
+        if prompt_vec[3] > 0.01:
+            prompt_walk.step_directed(
+                prompt_vec[0], prompt_vec[1], prompt_vec[2], prompt_vec[3]
+            )
         else:
             prompt_walk.step()
 
-        if latent_vec[2] > 0.01:
-            noise_walk.step_directed(latent_vec[0], latent_vec[1], latent_vec[2])
+        if latent_vec[3] > 0.01:
+            noise_walk.step_directed(
+                latent_vec[0], latent_vec[1], latent_vec[2], latent_vec[3]
+            )
         else:
             noise_walk.step()
 
@@ -152,10 +156,10 @@ async def stream_latent_walk(websocket: WebSocket):
     consumer_task = None
     stop_event = asyncio.Event()
 
-    # Direction control state
+    # Direction control state (dx, dy, dz, magnitude)
     direction_state = {
-        "prompt_vec": [0.0, 0.0, 0.0],
-        "latent_vec": [0.0, 0.0, 0.0],
+        "prompt_vec": [0.0, 0.0, 0.0, 0.0],
+        "latent_vec": [0.0, 0.0, 0.0, 0.0],
     }
 
     try:
@@ -170,13 +174,21 @@ async def stream_latent_walk(websocket: WebSocket):
                     "source_prompt", "Burger covered in sopping wet oil in a gutter"
                 )
                 target_prompt = msg.get("target_prompt", "steamy burger")
-                logger.info(f"Starting: {source_prompt} → {target_prompt}")
+                prompt_c = msg.get("prompt_c", "crispy golden fries")
+                prompt_d = msg.get("prompt_d", "fresh green salad")
+                logger.info(
+                    f"Starting: A={source_prompt}, B={target_prompt}, C={prompt_c}, D={prompt_d}"
+                )
 
-                # Setup walks
-                embed_src = pipeline.encode_prompt(source_prompt)
-                embed_tgt = pipeline.encode_prompt(target_prompt)
+                # Encode all 4 prompts
+                embed_a = pipeline.encode_prompt(source_prompt)
+                embed_b = pipeline.encode_prompt(target_prompt)
+                embed_c = pipeline.encode_prompt(prompt_c)
+                embed_d = pipeline.encode_prompt(prompt_d)
+
+                # Create 4-prompt semantic cube
                 prompt_walk = FourCornerWalk.from_prompt_embeddings(
-                    embed_src, embed_tgt, seed=config.seed
+                    embed_a, embed_b, embed_c, embed_d, seed=config.seed
                 )
 
                 latent_shape = (1, 4, config.latent_height, config.latent_width)
@@ -213,23 +225,25 @@ async def stream_latent_walk(websocket: WebSocket):
                         batch_times.append(time.perf_counter() - t_start)
                         frame_count += config.batch_size
 
-                        # Send edge proximity every 10 frames
+                        # Send position and edge proximity every 10 frames
                         if frame_count % 10 == 0:
-                            prompt_x, prompt_y = metrics["prompt_pos"]
-                            latent_x, latent_y = metrics["latent_pos"]
+                            prompt_x, prompt_y, prompt_z = metrics["prompt_pos"]
+                            latent_x, latent_y, latent_z = metrics["latent_pos"]
 
                             prompt_proximity = max(
-                                abs(prompt_x - 0.5), abs(prompt_y - 0.5)
+                                abs(prompt_x - 0.5), abs(prompt_y - 0.5), abs(prompt_z - 0.5)
                             ) * 2
                             latent_proximity = max(
-                                abs(latent_x - 0.5), abs(latent_y - 0.5)
+                                abs(latent_x - 0.5), abs(latent_y - 0.5), abs(latent_z - 0.5)
                             ) * 2
 
                             await websocket.send_json(
                                 {
-                                    "type": "edge_proximity",
-                                    "prompt": prompt_proximity,
-                                    "latent": latent_proximity,
+                                    "type": "position_update",
+                                    "prompt_pos": [prompt_x, prompt_y, prompt_z],
+                                    "latent_pos": [latent_x, latent_y, latent_z],
+                                    "prompt_proximity": prompt_proximity,
+                                    "latent_proximity": latent_proximity,
                                 }
                             )
 
@@ -282,8 +296,8 @@ async def stream_latent_walk(websocket: WebSocket):
                 consumer_task = asyncio.create_task(consumer())
 
             elif action == "update_direction":
-                direction_state["prompt_vec"] = msg.get("prompt_vec", [0.0, 0.0, 0.0])
-                direction_state["latent_vec"] = msg.get("latent_vec", [0.0, 0.0, 0.0])
+                direction_state["prompt_vec"] = msg.get("prompt_vec", [0.0, 0.0, 0.0, 0.0])
+                direction_state["latent_vec"] = msg.get("latent_vec", [0.0, 0.0, 0.0, 0.0])
 
             elif action == "stop":
                 logger.info("Stopping")
