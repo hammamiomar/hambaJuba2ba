@@ -1,7 +1,6 @@
 # hambajuba2ba
 
-Real-time diffusion pipeline with StreamDiffusion integration.
-
+Real-time diffusion pipeline with
 ## Setup
 
 1. uv venv --python /usr/bin/python3.11

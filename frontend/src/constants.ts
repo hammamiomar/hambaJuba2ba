@@ -1,8 +1,11 @@
 /*
-Constants for App Configs... maybe I name this config
+Constants for App Configs
 */
 export const WS_CONFIG = {
-  URL: `ws://localhost:8080/ws/generate/`,
+  URL: `ws://localhost:8080/ws/generate/`, // legacy
+  LOOPING_URL: `ws://localhost:8080/ws/exploration/looping`,
+  AUDIO_URL: `ws://localhost:8080/ws/exploration/audio`,
+  FOURCORNER_URL: `ws://localhost:8080/ws/fourcorner/`,
   RECONNECT_DELAY: 2000, // in ms
   MAX_RECONNECT_ATTEMPTS: 5,
 } as const;

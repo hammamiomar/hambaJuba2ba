@@ -1,10 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { ConnectionStatus } from "../types";
 import { WS_CONFIG, PERF_CONFIG } from "../constants";
+import type { Mode } from "../components/ModeSelector";
 
 interface UseWebSocketOptions {
-  /** WebSocket URL to connect to */
-  url: string;
+  /** Current mode */
+  mode: Mode;
 
   /**
    * Callback fired when a frame is received
@@ -15,6 +16,9 @@ interface UseWebSocketOptions {
 
   /** Callback fired when edge proximity update is received */
   onEdgeProximity?: (prompt: number, latent: number) => void;
+
+  /** Callback fired when interpolation position update is received */
+  onInterpPos?: (promptT: number, latentT: number, audioTime?: number) => void;
 
   /** Auto-connect on mount */
   autoConnect?: boolean;
@@ -34,12 +38,18 @@ interface UseWebSocketReturn {
   disconnect: () => void;
 
   /** Send start message to begin generation */
-  sendStart: (sourcePrompt?: string, targetPrompt?: string) => void;
+  sendStart: (
+    sourcePrompt?: string,
+    targetPrompt?: string,
+    promptStep?: number,
+    latentStep?: number,
+    audioId?: string,
+  ) => void;
 
   /** Send stop message to stop generation */
   sendStop: () => void;
 
-  /** Send direction update for vector field control */
+  /** Send direction update for vector field control (four-corner mode) */
   sendDirectionUpdate: (
     promptDx: number,
     promptDy: number,
@@ -48,6 +58,21 @@ interface UseWebSocketReturn {
     latentDy: number,
     latentMag: number,
   ) => void;
+
+  /** Send step size update (looping mode) */
+  sendStepUpdate: (promptStep?: number, latentStep?: number) => void;
+
+  /** Send audio time update (audio mode) */
+  sendAudioTime: (time: number) => void;
+
+  /** Send audio play command (audio mode) */
+  sendAudioPlay: () => void;
+
+  /** Send audio pause command (audio mode) */
+  sendAudioPause: () => void;
+
+  /** Send audio seek command (audio mode) */
+  sendAudioSeek: (time: number) => void;
 
   /** Current connection status */
   status: ConnectionStatus;
@@ -63,9 +88,10 @@ interface UseWebSocketReturn {
 }
 
 export function useWebSocket({
-  url,
+  mode,
   onFrame,
   onEdgeProximity,
+  onInterpPos,
   autoConnect = false,
   enableReconnect = true,
 }: UseWebSocketOptions): UseWebSocketReturn {
@@ -92,14 +118,15 @@ export function useWebSocket({
   // Defensive callback assignment
   const onFrameRef = useRef(onFrame);
   const onEdgeProximityRef = useRef(onEdgeProximity);
+  const onInterpPosRef = useRef(onInterpPos);
   useEffect(() => {
     onFrameRef.current = onFrame;
     onEdgeProximityRef.current = onEdgeProximity;
+    onInterpPosRef.current = onInterpPos;
   });
 
   /**
-   * Connect to WebSocket
-   * NOTE: url is the only dependency - onFrame is accessed via ref
+   * Connect to WebSocket based on current mode
    */
   const connect = useCallback(() => {
     // Prevent duplicate connections
@@ -111,7 +138,15 @@ export function useWebSocket({
       return;
     }
 
-    console.log(`[useWebSocket] Connecting to ${url}`);
+    // select URL based on mode
+    const url =
+      mode === "looping"
+        ? WS_CONFIG.LOOPING_URL
+        : mode === "audio"
+          ? WS_CONFIG.AUDIO_URL
+          : WS_CONFIG.FOURCORNER_URL;
+
+    console.log(`[useWebSocket] Connecting to ${url} (${mode} mode)`);
     setStatus(ConnectionStatus.CONNECTING);
 
     ws.current = new WebSocket(url);
@@ -148,6 +183,12 @@ export function useWebSocket({
           const message = JSON.parse(event.data);
           if (message.type === "edge_proximity" && onEdgeProximityRef.current) {
             onEdgeProximityRef.current(message.prompt, message.latent);
+          } else if (message.type === "interp_pos" && onInterpPosRef.current) {
+            onInterpPosRef.current(
+              message.prompt_t,
+              message.latent_t,
+              message.audio_time,
+            );
           }
         } catch (e) {
           console.warn("[useWebSocket] Failed to parse JSON message:", e);
@@ -185,7 +226,7 @@ export function useWebSocket({
         }, WS_CONFIG.RECONNECT_DELAY);
       }
     };
-  }, [url, enableReconnect, reconnectAttempts]); // onFrame is NOT in dependencies!
+  }, [mode, enableReconnect, reconnectAttempts]);
 
   /**
    * Disconnect from WebSocket
@@ -212,7 +253,13 @@ export function useWebSocket({
    * Send start message to begin generation
    */
   const sendStart = useCallback(
-    (sourcePrompt?: string, targetPrompt?: string) => {
+    (
+      sourcePrompt?: string,
+      targetPrompt?: string,
+      promptStep?: number,
+      latentStep?: number,
+      audioId?: string,
+    ) => {
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         console.log("[useWebSocket] Sending start message");
         ws.current.send(
@@ -220,6 +267,9 @@ export function useWebSocket({
             action: "start",
             source_prompt: sourcePrompt,
             target_prompt: targetPrompt,
+            prompt_step: promptStep,
+            latent_step: latentStep,
+            audio_id: audioId,
           }),
         );
         setIsGenerating(true);
@@ -240,7 +290,7 @@ export function useWebSocket({
   }, []);
 
   /**
-   * Send direction update for vector field control
+   * Send direction update for vector field control (four-corner mode)
    */
   const sendDirectionUpdate = useCallback(
     (
@@ -265,6 +315,70 @@ export function useWebSocket({
   );
 
   /**
+   * Send step size update (looping mode)
+   */
+  const sendStepUpdate = useCallback(
+    (promptStep?: number, latentStep?: number) => {
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(
+          JSON.stringify({
+            action: "update_steps",
+            prompt_step: promptStep,
+            latent_step: latentStep,
+          }),
+        );
+      }
+    },
+    [],
+  );
+
+  /**
+   * Send audio time update (audio mode)
+   */
+  const sendAudioTime = useCallback((time: number) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(
+        JSON.stringify({
+          action: "audio_timeupdate",
+          time,
+        }),
+      );
+    }
+  }, []);
+
+  /**
+   * Send audio play command (audio mode)
+   */
+  const sendAudioPlay = useCallback(() => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ action: "audio_play" }));
+    }
+  }, []);
+
+  /**
+   * Send audio pause command (audio mode)
+   */
+  const sendAudioPause = useCallback(() => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ action: "audio_pause" }));
+    }
+  }, []);
+
+  /**
+   * Send audio seek command (audio mode)
+   */
+  const sendAudioSeek = useCallback((time: number) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(
+        JSON.stringify({
+          action: "audio_seek",
+          time,
+        }),
+      );
+    }
+  }, []);
+
+  /**
    * Auto-connect effect (only runs when autoConnect or url changes)
    */
   useEffect(() => {
@@ -284,6 +398,11 @@ export function useWebSocket({
     sendStart,
     sendStop,
     sendDirectionUpdate,
+    sendStepUpdate,
+    sendAudioTime,
+    sendAudioPlay,
+    sendAudioPause,
+    sendAudioSeek,
     status,
     fps,
     isGenerating,

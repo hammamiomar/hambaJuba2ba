@@ -22,6 +22,7 @@ dependencies = [
   "websockets",
   "pydantic-settings",
   "librosa>=0.11.0",
+  "torchaudio>=2.7.1",
 ]
 
 [project.optional-dependencies]

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { ConnectionStatus } from "../types";
 import type { Metrics } from "../types";
+import { ModeSelector, type Mode } from "./ModeSelector";
+import { AudioPlayer } from "./AudioPlayer";
 
 interface ControlsProps {
   status: ConnectionStatus;
@@ -16,6 +18,18 @@ interface ControlsProps {
   targetPrompt: string;
   onTargetPromptChange: (prompt: string) => void;
   reconnectAttempts?: number;
+
+  // mode props
+  mode: Mode;
+  onModeChange: (mode: Mode) => void;
+  onAudioLoaded: (audioId: string, rms: number[], timestamps: number[], duration: number) => void;
+  audioTime?: number;
+
+  // audio control methods
+  onAudioTimeUpdate?: (time: number) => void;
+  onAudioPlay?: () => void;
+  onAudioPause?: () => void;
+  onAudioSeeked?: (time: number) => void;
 }
 
 export function Controls({
@@ -31,6 +45,14 @@ export function Controls({
   targetPrompt,
   onTargetPromptChange,
   reconnectAttempts = 0,
+  mode,
+  onModeChange,
+  onAudioLoaded,
+  audioTime = 0,
+  onAudioTimeUpdate,
+  onAudioPlay,
+  onAudioPause,
+  onAudioSeeked,
 }: ControlsProps) {
   const isConnected = status === ConnectionStatus.CONNECTED;
   const isConnecting = status === ConnectionStatus.CONNECTING;
@@ -119,6 +141,15 @@ export function Controls({
           )}
         </div>
 
+        {/* Mode selector */}
+        <div className="mb-6">
+          <ModeSelector
+            currentMode={mode}
+            onModeChange={onModeChange}
+            disabled={isGenerating}
+          />
+        </div>
+
         {/* Connection controls */}
         <div className="mb-6 space-y-3">
           <div className="flex gap-0">
@@ -190,6 +221,22 @@ export function Controls({
               className="w-full rounded-md border border-[#8B9A7E]/20 bg-[#8B9A7E]/10 px-3 py-2 text-sm text-white placeholder-white/30 shadow-inner backdrop-blur-sm transition focus:border-[#8B9A7E]/40 focus:outline-none focus:ring-1 focus:ring-[#8B9A7E]/40 disabled:cursor-not-allowed disabled:opacity-40"
             />
           </div>
+
+          {/* Audio upload (audio mode only) */}
+          {mode === "audio" && (
+            <div className="pt-3">
+              <AudioPlayer
+                onAudioLoaded={onAudioLoaded}
+                disabled={false}
+                audioTime={audioTime}
+                isGenerating={isGenerating}
+                onTimeUpdate={onAudioTimeUpdate}
+                onPlay={onAudioPlay}
+                onPause={onAudioPause}
+                onSeeked={onAudioSeeked}
+              />
+            </div>
+          )}
         </div>
 
         {/* Metrics */}
